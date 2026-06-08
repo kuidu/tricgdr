@@ -1,4 +1,4 @@
-function [x, y, exitflag, resvec, varargout] = tricgdr_two_stage(A, b, c, M, N, k, p, tol, maxcycle, opt)
+function [x, y, exitflag, resvec, varargout] = tricgdr(A, b, c, M, N, k, p, tol, maxcycle, opt)
 % TRICGDR will find approximate solution of following equation with
 % implicity deflated restart:
 %
@@ -9,17 +9,17 @@ function [x, y, exitflag, resvec, varargout] = tricgdr_two_stage(A, b, c, M, N, 
 %
 % Syntaxes
 % --------------
-% [x, y] = tricgdr_two_stage(A, b, c)
-% [x, y] = tricgdr_two_stage(A, b, c, M, N)
-% [x, y] = tricgdr_two_stage(A, b, c, M, N, k, p)
-% [x, y] = tricgdr_two_stage(A, b, c, M, N, k, p, tol)
-% [x, y] = tricgdr_two_stage(A, b, c, M, N, k, p, tol, maxcycle)
-% [x, y] = tricgdr_two_stage(__, Name, Value)
+% [x, y] = tricgdr(A, b, c)
+% [x, y] = tricgdr(A, b, c, M, N)
+% [x, y] = tricgdr(A, b, c, M, N, k, p)
+% [x, y] = tricgdr(A, b, c, M, N, k, p, tol)
+% [x, y] = tricgdr(A, b, c, M, N, k, p, tol, maxcycle)
+% [x, y] = tricgdr(__, Name, Value)
 %
 %
-% [x, y, exitflag] = tricgdr_two_stage(__)
-% [x, y, exitflag, resvec] = tricgdr_two_stage(__) 
-% [x, y, exitflag, resvec, U, T, V, MU, NV] = tricgdr_two_stage(__)
+% [x, y, exitflag] = tricgdr(__)
+% [x, y, exitflag, resvec] = tricgdr(__) 
+% [x, y, exitflag, resvec, U, T, V, MU, NV] = tricgdr(__)
 %
 % Parameters
 % --------------
@@ -46,18 +46,14 @@ function [x, y, exitflag, resvec, varargout] = tricgdr_two_stage(A, b, c, M, N, 
 %                                   triplets
 %                   
 %                   'maxit':        number of maximum iterations on the
-%                                   non-restarting stage
+%                                   non-restarting stage 
 % 
-%                   'mreorth':      number of converged singular vectors used
-%                                   for reorthogonalization
+%                   'sigma':        type of the elliptic singular values.
+%                                   'lm' (default) means largest; 'sm': means smallest.
 % 
 %                   'exres':        determine whether compute the exact
 %                                   residual norms
 % 
-%                   'reorth':       the type of reorthogonalization. `1`
-%                                   means only reorthogonalize one side.
-%                                   `2` means reorthogonalize both two sides.
-%                   
 %                   'show_info':    determine whether print the information
 %                                   of the results
 %
@@ -78,29 +74,23 @@ arguments
     c               (:, 1)          {mustBeVector}
     M                                                                       =  []
     N                                                                       =  []
-    k                       double  {mustBeVector}                          =  [10, 0]
+    k                       double  {mustBeVector}                          =  10
     p               (1, 1)  double  {mustBeInteger}                         =  40
     tol             (1, 1)  double  {mustBeReal, mustBeNonnegative}         =  1e-6
     maxcycle        (1, 1)  double  {mustBeInteger}                         =  100
     opt.stol        (1, 1)  double  {mustBeReal, mustBeNonnegative}         =  tol
     opt.maxit       (1, 1)  double  {mustBeInteger}                         =  100
-    opt.mreorth     (1, 1)  double  {mustBeInteger}                         =  sum(k)
+    opt.sigma                                                               =  'lm'
     opt.exres       (1, 1)  logical                                         =  false
-    opt.reorth      (1, 1)  double  {mustBeMember(opt.reorth, [0, 2])}      =  2
     opt.show_info   (1, 1)  logical                                         =  false
 end
 
 outer = maxcycle;
 stol = opt.stol;
 maxit = opt.maxit;
-mreorth = opt.mreorth;
-reorth_type = opt.reorth;
+sigma = opt.sigma;
 exres = opt.exres;
 show_info = opt.show_info;
-
-if mreorth > p
-    mreorth = sum(k);
-end
 
 if isempty(M)
     M = @(x, t) x;
@@ -113,9 +103,6 @@ end
 MisFunc = isa(M, 'function_handle');
 NisFunc = isa(N, 'function_handle');
 AisFunc = isa(A, 'function_handle');
-
-k1 = k(1);
-k2 = k(2);
 
 m = length(b);
 n = length(c);
@@ -147,7 +134,7 @@ MU(:, 1) = Mu1;
 NV(:, 1) = Nv1;
 
 exitflag = 1;
-resvec = zeros(outer*p+1, 1);
+resvec = zeros(outer*p+maxit+1, 1);
 
 if exres
     nr = exact_norm(A, M, N, b, c, x, y);
@@ -157,7 +144,7 @@ end
 
 resvec(1) = nr;
 
-k_aug = k1 + k2;
+k_aug = k;
 k = 0;
 idx_res = 1;
 
@@ -235,9 +222,11 @@ for outiter = 1:outer
 
     gxk2 = gxk2 - deltak1' * gxk1;
     gyk2 = gyk2 - deltak1' * gyk1;
-
-    x = x + pik1 * gxk1 + pik2 * gxk2;
-    y = y + pik1 * gyk1 + pik2 * gyk2;
+    
+    dx = pik1 * gxk1 + pik2 * gxk2;
+    dy = pik1 * gyk1 + pik2 * gyk2;
+    x = x + dx;
+    y = y + dy;
 
     if MisFunc; u = M(Mu, 2); else; u = M \ Mu; end
     if NisFunc; v = N(Nv, 2); else; v = N \ Nv; end
@@ -282,8 +271,15 @@ for outiter = 1:outer
         resvec(idx_res) = nr;
 
         if nr <= tol
-            exitflag = 0;
-            break;
+            if ~exres
+                nr = exact_norm(A, M, N, b, c, x, y);
+                resvec(idx_res) = nr;
+            end
+        
+            if nr <= tol
+                exitflag = 0;
+                break;
+            end
         end
 
         if AisFunc
@@ -301,11 +297,6 @@ for outiter = 1:outer
 
         Mu = Mu - alpha * Mu1;
         Nv = Nv - alpha' * Nv1;
-
-        if conv && mreorth > 0
-            Mu = Mu - MU(:, 1:mreorth) * (U(:, 1:mreorth)' * Mu);
-            Nv = Nv - NV(:, 1:mreorth) * (V(:, 1:mreorth)' * Nv);
-        end
         
         if ~conv
             V(:, j) = v1;
@@ -318,10 +309,14 @@ for outiter = 1:outer
             T(j-1, j) = gamma1;
         end
 
-        if ~conv && reorth_type == 2
+        if conv
+            Mu = Mu - MU(:, 1:k) * (U(:, 1:k)' * Mu);
+            Nv = Nv - NV(:, 1:k) * (V(:, 1:k)' * Nv);
+        else
             Mu = Mu - MU(:, 1:j) * (U(:, 1:j)' * Mu);
             Nv = Nv - NV(:, 1:j) * (V(:, 1:j)' * Nv);
         end
+
 
         if MisFunc; u = M(Mu, 2); else; u = M \ Mu; end
         if NisFunc; v = N(Nv, 2); else; v = N \ Nv; end
@@ -344,9 +339,11 @@ for outiter = 1:outer
 
         gy1 = -sig1' * gy0;
         gy2 = v1 - delta1' * gy1 - lam1' * gy0 - eta1' * gy_1;
-
-        x = x + pi1 * gx1 + pi2 * gx2;
-        y = y + pi1 * gy1 + pi2 * gy2;
+        
+        dx = pi1 * gx1 + pi2 * gx2;
+        dy = pi1 * gy1 + pi2 * gy2;
+        x = x + dx;
+        y = y + dy;
 
         xi1 = pi1 - delta1' * pi2;
         xi2 = pi2;
@@ -385,12 +382,19 @@ for outiter = 1:outer
     [U_T, S_T, V_T] = svd(T);
     Smax = S_T(1, 1);
 
-    I = [1:k1, p-k2+1:p];
+    if strcmpi(sigma, 'lm')
+        I = 1:k;
+    elseif strcmpi(sigma, 'sm')
+        I = p-k+1:p;
+    else
+        error("Invalid input for the argumetn 'sigma'.");
+    end
+
     U_T = U_T(:, I);
     V_T = V_T(:, I);
     S_T = S_T(I, I);
 
-    T(1:k, 1:k) = S_T(1:k, 1:k);
+    T(1:k, 1:k) = S_T;
     U(:, 1:k+1) = [U * U_T, u1];
     V(:, 1:k+1) = [V * V_T, v1];
     MU(:, 1:k+1) = [MU * U_T, Mu1];
@@ -402,7 +406,6 @@ for outiter = 1:outer
     T(1:k, k+1) = res2';
     T(k+1, 1:k) = res1;
 
-    % [conv, absres, relres] = checkConv(abs(res1), abs(res2), k_aug, stol, Smax);
     I = (abs(res1) <= stol);
     len_conv = length( find(abs(res2(I)) <= stol) );
 

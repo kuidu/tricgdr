@@ -33,9 +33,8 @@ function [Uk, Sk, Vk, MUk, NVk, Tk, len_conv] = gssydr(A, b, c, M, N, k, p, tol,
 %
 %
 % Name, Value   name-Value pairs determine other options. 
-%                   `reorth`:   the type of reorthogonalization. `1` means
-%                               only reorthogonalize one side. `2` means 
-%                               reorthogonalize both two sides
+%               `sigma`:   type of elliptic singular values. `lm` means
+%                          largest. `sm` means smallest
 %
 %
 % Returns
@@ -51,14 +50,14 @@ arguments
     c               (:, 1)          {mustBeVector}
     M                                                                       =  []
     N                                                                       =  []
-    k                       double  {mustBeVector}                          =  [10, 0]
+    k                       double  {mustBeVector}                          =  10
     p               (1, 1)  double  {mustBeInteger}                         =  40
     tol             (1, 1)  double  {mustBeReal, mustBeNonnegative}         =  1e-6
     maxcycle        (1, 1)  double  {mustBeInteger}                         =  100
-    opt.reorth      (1, 1)  double  {mustBeMember(opt.reorth, [0, 2])}      =  2
+    opt.sigma                                                               =  'lm'
 end
 
-reorth_type = opt.reorth;
+sigma = opt.sigma;
 
 if isempty(M)
     M = @(x, t) x;
@@ -71,9 +70,6 @@ end
 MisFunc = isa(M, 'function_handle');
 NisFunc = isa(N, 'function_handle');
 AisFunc = isa(A, 'function_handle');
-
-k1 = k(1);
-k2 = k(2);
 
 lb = length(b);
 lc = length(c);
@@ -102,8 +98,9 @@ V(:, 1) = v1;
 MU(:, 1) = Mu1;
 NV(:, 1) = Nv1;
 
+
+k_aug = k;
 k = 0;
-k_aug = k1 + k2;
 
 if k_aug >= p
     k_aug = min(max(p-10, 10), floor(p/2));
@@ -180,11 +177,8 @@ for outiter = 1:maxcycle
         T(j, j-1) = beta1;
         T(j-1, j) = gamma1;
 
-
-        if reorth_type == 2
-            Mu = Mu - MU(:, 1:j) * (U(:, 1:j)' * Mu);
-            Nv = Nv - NV(:, 1:j) * (V(:, 1:j)' * Nv);
-        end
+        Mu = Mu - MU(:, 1:j) * (U(:, 1:j)' * Mu);
+        Nv = Nv - NV(:, 1:j) * (V(:, 1:j)' * Nv);
 
         if MisFunc; u = M(Mu, 2); else; u = M \ Mu; end
         if NisFunc; v = N(Nv, 2); else; v = N \ Nv; end
@@ -193,14 +187,8 @@ for outiter = 1:maxcycle
         gamma2 = sqrt(v' * Nv);
 
         if min(abs(beta2), abs(gamma2)) <= ttol
-            p = j;
-            k_aug = min(k_aug, p);
-            k1 = k_aug;
-            k2 = 0;
-            T = T(1:j, 1:j);
-            warning(['beta or gamma is approximate zero, gSSY-DR terminates, ' ...
-                'and we only compute the first %d singular triplets'], k_aug);
-            break;
+            error(['beta or gamma is approximate zero, gSSY-DR terminates. ' ...
+                'Please use smaller values of k and p (should < %d)'], j);
         end
 
         % update for next iteration
@@ -221,7 +209,13 @@ for outiter = 1:maxcycle
 
     [U_T, S_T, V_T] = svd(T);
 
-    I = [1:k1, p-k2+1:p];
+    if strcmpi(sigma, 'lm')
+        I = 1:k;
+    elseif strcmpi(sigma, 'sm')
+        I = p-k+1:p;
+    else
+        error("Invaild input for the argument 'sigma'.");
+    end
 
     U_T = U_T(:, I);
     V_T = V_T(:, I);
@@ -239,7 +233,6 @@ for outiter = 1:maxcycle
     T(1:k, k+1) = res2';
     T(k+1, 1:k) = res1;
 
-    % [conv, ~, ~, len_conv] = checkConv(abs(res1), abs(res2), k, tol, Smax);
     I = (abs(res1) <= tol);
     len_conv = length( find(abs(res2(I)) <= tol) );
 

@@ -191,8 +191,10 @@ for outerit = 1:outer
         Nu = p - alpha' * Nu1;
 
         if mreorth > 0
-            Mv = reorth(Mv, V(:, 1:last_col), MV(:, 1:last_col));
-            Nu = reorth(Nu, U(:, 1:last_col), NU(:, 1:last_col));
+            % Mv = reorth(Mv, V(:, 1:last_col), MV(:, 1:last_col));
+            % Nu = reorth(Nu, U(:, 1:last_col), NU(:, 1:last_col));
+            Mv = Mv - MV(:, 1:last_col) * (V(:, 1:last_col)'*Mv);
+            Nu = Nu - NU(:, 1:last_col) * (U(:, 1:last_col)'*Nu);
         end
 
         if ~isempty(augU) && ~isempty(augMU)
@@ -237,8 +239,10 @@ for outerit = 1:outer
         gy1 = -sig1' * gy0;
         gy2 = u1 - delta1' * gy1 - lam1' * gy0 - eta1' * gy_1;
 
-        x = x + pi1 * gx1 + pi2 * gx2;
-        y = y + pi1 * gy1 + pi2 * gy2;
+        dx = pi1 * gx1 + pi2 * gx2;
+        dy = pi1 * gy1 + pi2 * gy2;
+        x = x + dx;
+        y = y + dy;
 
         % compute norm of residual exactly
         if exres
@@ -257,8 +261,8 @@ for outerit = 1:outer
 
             if nr <= tol
                 exitflag = 0;
-                resvec = resvec(1:idx_res);
-                return;
+                % resvec = resvec(1:idx_res);
+                break;
             end
         end
 
@@ -288,6 +292,5 @@ if show_info
     end
 end
 
-% resvec = resvec(1:idx_res);
-
+resvec = resvec(1:idx_res);
 end
